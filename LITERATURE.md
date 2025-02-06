@@ -1,4 +1,8 @@
 
+## Entropic Herding  [arxiv](https://arxiv.org/abs/2112.11616)
+Hiroshi Yamashita, Hideyuki Suzuki, Kazuyuki Aihara
+
+Herding is a deterministic algorithm used to generate data points that can be regarded as random samples satisfying input moment conditions. The algorithm is based on the complex behavior of a high-dimensional dynamical system and is inspired by the maximum entropy principle of statistical inference. In this paper, we propose an extension of the herding algorithm, called entropic herding, which generates a sequence of distributions instead of points. Entropic herding is derived as the optimization of the target function obtained from the maximum entropy principle. Using the proposed entropic herding algorithm as a framework, we discuss a closer connection between herding and the maximum entropy principle. Specifically, we interpret the original herding algorithm as a tractable version of entropic herding, the ideal output distribution of which is mathematically represented. We further discuss how the complex behavior of the herding algorithm contributes to optimization. We argue that the proposed entropic herding algorithm extends the application of herding to probabilistic modeling. In contrast to original herding, entropic herding can generate a smooth distribution such that both efficient probability density calculation and sample generation become possible. To demonstrate the viability of these arguments in this study, numerical experiments were conducted, including a comparison with other conventional methods, on both synthetic and real data.
 
 ## Super-Samples from Kernel Herding [arxiv](https://arxiv.org/abs/1203.3472)
 Yutian Chen, Max Welling, Alex Smola
