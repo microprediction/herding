@@ -15,9 +15,6 @@ Modifications:
 import numpy as np
 import math
 from randomcov.randomcorrelationmatrix import random_correlation_matrix
-
-from debug.gaussianherding.debug_herding_2d import NUM_CANDIDATES
-from herding.animation.landmarkanimation2d import landmark_animation_2d
 from herding.animation.discrepancyanimation2d import discrepancy_animation_2d
 from herding.gaussiankernel.analyticallandmarkexpectationmulti import (
     analytical_landmark_expectation_multi,

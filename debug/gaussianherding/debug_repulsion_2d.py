@@ -19,12 +19,7 @@ Steps:
 """
 
 import numpy as np
-import math
-from randomcov import random_covariance_matrix
-
 from debug.gaussianherding.debug_herding_2d import TRUE_RHO
-# Your other imports:
-from herding.animation.landmarkanimation2d import landmark_animation_2d
 from herding.animation.discrepancyanimation2d import discrepancy_animation_2d
 from randomcov.randomcorrelationmatrix import random_correlation_matrix
 from herding.gaussiankernel.analyticallandmarkexpectationmulti import analytical_landmark_expectation_multi

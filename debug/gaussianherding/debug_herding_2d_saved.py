@@ -20,8 +20,6 @@ Steps:
 import numpy as np
 
 # Replace if you have your own random covariance generator
-from randomcov import random_covariance_matrix
-from herding.animation.landmarkanimation2d import landmark_animation_2d
 from herding.animation.discrepancyanimation2d import discrepancy_animation_2d
 from randomcov.randomcorrelationmatrix import random_correlation_matrix
 from herding.gaussiankernel.analyticallandmarkexpectationmulti import analytical_landmark_expectation_multi
