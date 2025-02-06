@@ -26,7 +26,7 @@ setup(
               "herding.gaussiankernel"
               ],
     test_suite='pytest',
-    tests_require=['pytest','riskparityportfolio'],
+    tests_require=['pytest'],
     include_package_data=True,
     install_requires=['numpy','randomcov'],
     entry_points={
