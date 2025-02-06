@@ -1,6 +1,6 @@
 
 
-## Super-Samples from Kernel Herding
+## Super-Samples from Kernel Herding [arxiv](https://arxiv.org/abs/1203.3472)
 Yutian Chen, Max Welling, Alex Smola
 
 We extend the herding algorithm to continuous
