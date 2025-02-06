@@ -1,4 +1,4 @@
-# herding
+# herding  ![tests_312](https://github.com/microprediction/herding/workflows/tests_312/badge.svg)
 Kernel herding is a kind of quasi-monte carlo where samples are chosen successively to approximate known kernel moment constraints. 
 
 In the [video](https://github.com/microprediction/herding/tree/main/docs/assets/video) also linked below, the green dots are landmark locations `y` and the expected value of a gaussian kernel `E[ker(x,y)]` is assumed known for the desired distribution for `x`, which happens to be Gaussian.   
