@@ -3,6 +3,9 @@ import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from scipy.spatial import Delaunay
 
+INTERVAL = 30  # Animation speed
+
+
 def discrepancy_animation_2d(landmarks, landmark_expectations, sigma_k, gen, true_rho):
     """
     Extended 2D Herding Animation with a 3x2 grid of subplots:
@@ -135,8 +138,20 @@ def discrepancy_animation_2d(landmarks, landmark_expectations, sigma_k, gen, tru
         i = len(iteration_list)
         iteration_list.append(i)
 
-        x_current, running_arr = frame
+        if len(frame) == 2:
+            # Single-point case
+            x_current, running_arr = frame
+            x2_current = None  # No second point
+        elif len(frame) == 3:
+            # Two-point case
+            x_current, x2_current, running_arr = frame
+        else:
+            raise ValueError("Unexpected number of elements in frame!")
+
+
         sample_history.append(x_current)
+        if x2_current is not None:
+            sample_history.append(x2_current)
 
         # --- (a) Running surface re-plot ---
         ax_run.clear()
@@ -207,9 +222,28 @@ def discrepancy_animation_2d(landmarks, landmark_expectations, sigma_k, gen, tru
         # Plot entire history in black
         hist_arr = np.array(sample_history)
         ax_samples.scatter(hist_arr[:, 0], hist_arr[:, 1], c='k', s=10)
-        # Highlight the last point in red
-        ax_samples.scatter([x_current[0]], [x_current[1]], c='red', s=40)
 
+        ax_samples.scatter(hist_arr[-2:, 0], hist_arr[-2:, 1], c='r', s=20)
+
+        if x2_current is None:
+            # Plot a single red dot when only one point is chosen
+            ax_run.scatter([x_current[0]], [x_current[1]], [0], c='r', marker='o', s=40)
+        else:
+            # Draw a red line between the two selected points
+            ax_run.plot(
+                [x_current[0], x2_current[0]],
+                [x_current[1], x2_current[1]],
+                [0, 0], 'r-', linewidth=2.5
+            )
+
+            # Also mark the selected points explicitly as red dots to make them visible
+            ax_run.scatter(
+                [x_current[0], x2_current[0]],
+                [x_current[1], x2_current[1]],
+                [0, 0], c='r', marker='o', s=40
+            )
+
+        # Ensure landmarks remain green
         ax_samples.scatter(
             landmarks[:, 0], landmarks[:, 1],
             c='g', s=40, marker='o', label="Landmarks"
@@ -227,7 +261,7 @@ def discrepancy_animation_2d(landmarks, landmark_expectations, sigma_k, gen, tru
 
     anim = FuncAnimation(
         fig, update, frames=gen,
-        init_func=init, interval=500,
+        init_func=init, interval=INTERVAL,
         blit=False, repeat=False
     )
 

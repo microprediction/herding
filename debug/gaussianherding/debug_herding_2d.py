@@ -1,128 +1,181 @@
 #!/usr/bin/env python3
 
 """
-2D Herding Animation Demo
+2D Herding Animation Demo with Repulsion + Noise
 
 Steps:
  1) Generate m random landmarks in 2D.
- 2) Generate a random 2x2 covariance matrix for "true" distribution.
+ 2) Generate a random 2x2 correlation matrix (positive-definite).
  3) Compute the exact (analytical) landmark expectations for X ~ N(0, true_cov).
  4) Create a generator (herding_generator) that:
     - Maintains a running sum of kernel vectors over chosen samples.
-    - Periodically (e.g., every 5 steps) generates a fresh candidate set.
-    - For each candidate x, computes the potential "new mean" if x were added.
-    - Chooses the candidate that best reduces the Euclidean distance to the true mean.
-    - Yields (best_x, running_landmark_expectation) each iteration.
- 5) Visualize with landmark_animation_2d.
+    - Periodically (e.g., every 20 steps) generates a fresh candidate set.
+    - For each candidate x, computes:
+        * The 'distance-based' herding objective vs. the true mean
+        * A 'repulsion' penalty that grows if x is close to older samples
+        * total_score = dist_score + repulsion_weight * repulsion
+      Then picks the candidate with minimal total_score.
+    - **Adds small random noise** to that best candidate x before finalizing it.
+    - Recomputes the kernel vector for the noisy version and updates the herding sums.
+    - Yields (x_noisy, running_landmark_expectation).
+ 5) Visualize with your chosen animator (e.g., discrepancy_animation2d).
 """
 
 import numpy as np
-from randomcov import random_covariance_matrix
+import math
 
-# Assuming these functions are available from your codebase:
+# If you have your own random covariance or correlation matrix generator:
+from randomcov.randomcorrelationmatrix import random_correlation_matrix
+from statsmodels.distributions.copula.archimedean import FrankCopula
+
 from herding.animation.landmarkanimation2d import landmark_animation_2d
 from herding.animation.discrepancyanimation2d import discrepancy_animation_2d
-from randomcov.randomcorrelationmatrix import random_correlation_matrix
-from herding.gaussiankernel.analyticallandmarkexpectationmulti import analytical_landmark_expectation_multi
+from herding.gaussiankernel.analyticallandmarkexpectationmulti import (
+    analytical_landmark_expectation_multi,
+)
 from herding.gaussiankernel.gaussiankernelmulti import gaussian_kernel_multi
 
+# ------------------------------- Parameters -------------------------------
 
-animator = discrepancy_animation_2d  # <--- CHOOSE
+EXPONENT = 2.0         # Exponent for the distance-based measure
+NUM_LANDMARKS = 20       # Number of 2D landmarks
+KERNEL_SIZE = 0.5       # sigma_k for the RBF kernel
+REPULSION_WEIGHT = 0e-6  # scaling factor for repulsion penalty
+REPULSION_EXPONENT = 1.0
+EPS = 1e-8             # small offset to avoid dividing by zero
+NOISE_SCALE = 0.0      # scale of random noise added to each chosen sample
+FRACTION = 1.0
+TRUE_RHO = -0.75
+NUM_CANDIDATES = 5000
+
+animator = discrepancy_animation_2d  # or landmark_animation_2d, your choice
 
 def debug_herding_2d():
-    rng = np.random.default_rng()
+    rng = np.random.default_rng(seed=42)
 
-    # 1) Generate ~25 random 2D landmarks in [-5, 5].
-    m = 50
-    landmarks = rng.uniform(-3.5, 3.5, size=(m, 2))
+    # 1) Generate random 2D landmarks
+    m = NUM_LANDMARKS
+    landmarks = rng.uniform(-5, 5, size=(m, 2))
 
-    # 2) Generate a random 2x2 covariance (positive definite).
+    # 2) Generate a random 2x2 correlation matrix
     true_cov = random_correlation_matrix(n=2)
-    true_rho = true_cov[0][1]
-    print({'true_rho':true_rho})
+    true_cov[0][1] = TRUE_RHO
+    true_cov[1][0] = TRUE_RHO
+    true_rho = true_cov[0, 1]
+    print(f"true_rho = {true_rho:.3f}")
 
     # 3) Compute "true" landmark expectations:
-    #    E[exp(-||X - y||^2/(2*sigma^2))], where X ~ N(0, true_cov).
-    sigma_k = 0.25
-    # We'll assume the mean is 0 in R^2:
+    #    E[exp(-||X - y||^2/(2*sigma^2))], X ~ N(0, true_cov).
+    sigma_k = KERNEL_SIZE
     mu = np.zeros(2)
     landmark_expectations = analytical_landmark_expectation_multi(
         mu, true_cov, landmarks, sigma_k
     )
 
-    # 4) Define a herding generator.
-    def herding_generator(n_iters=20, candidate_size=2000, refresh_every=20):
+    # ------------------ 4) Define the Herding Generator ------------------
+    def herding_generator(n_iters=2000, candidate_size=NUM_CANDIDATES, refresh_every=20):
         """
-        At each iteration:
-         - Possibly create a fresh candidate set (every 'refresh_every' steps)
-         - For each candidate x:
-             * Evaluate gaussian_kernel_multi(x, landmarks, sigma_k)
-             * Estimate new_mean = (running_sum + k_x) / (running_count + 1)
-             * Score = ||new_mean - landmark_expectations||^2
-         - Pick candidate x that yields minimal score
-         - Update running_sum, running_count, running_landmark_expectation
-         - Yield (best_x, running_landmark_expectation)
+        Each iteration:
+          - Possibly refresh candidate set
+          - For each candidate x:
+              * Evaluate kernel vector gk(x) w.r.t. landmarks
+              * distance-based score: dist_score = sum( abs( new_mean - landmark_expectations )^EXPONENT )
+              * repulsion penalty: sum(1/(||x - old_sample||^2 + EPS)) / #samples
+              * total_score = dist_score + REPULSION_WEIGHT * repulsion
+          - Pick candidate with minimal total_score
+          - Add small random noise to best_x -> best_x_noisy
+          - Recompute kernel for best_x_noisy, update sums
+          - Yield (best_x_noisy, running_landmark_expectation)
         """
         running_sum = np.zeros(m)
         running_count = 0
+        sample_history = []  # store previously chosen points
 
-        # For convenience, define a function to get the best next sample
-        def pick_best_sample(candidates):
+        # -- helper to compute repulsion for each candidate --
+        def compute_repulsion(candidates):
+            """
+            For each candidate, sum(1/(||x-c||^2 + EPS)) over old samples c in sample_history,
+            then average by #samples to keep it scale-limited.
+            Output shape: (len(candidates),)
+            """
+            if not sample_history:
+                return np.zeros(len(candidates))
+            old_arr = np.array(sample_history)  # shape (n, 2)
+            c_expanded = candidates[:, None, :]  # shape (candidate_size, 1, 2)
+            o_expanded = old_arr[None, :, :]     # shape (1, n, 2)
+
+            sq_dists = np.sum(np.abs((c_expanded - o_expanded))**REPULSION_EXPONENT, axis=2)  # shape (candidate_size, n)
+            repulsions = np.sum(1.0 / (sq_dists + EPS), axis=1)
+            repulsions /= np.median(repulsions)
+            return repulsions
+
+        def pick_best_candidate(candidates):
             nonlocal running_sum, running_count
-            # Compute kernel vectors for all candidates, shape = (candidate_size, m)
-            # k[i, :] = kernel of candidates[i] with all landmarks
+
+
+            # Evaluate kernel vectors for all candidates
             gk = np.array([gaussian_kernel_multi(pt, landmarks, sigma_k) for pt in candidates])
 
-            # We'll compute the "score" of choosing each candidate
-            # new_mean = (running_sum + k[i]) / (running_count+1)
-            # we measure L2 distance from the true mean
-            # => dist^2 = ||(running_sum + k[i])/(running_count+1) - landmark_expectations||^2
-            # We'll pick the candidate with minimal dist^2
+            # new_mean[i] = (running_sum + gk[i]) / (running_count + 1)
+            new_means = (running_sum[None, :] + gk*FRACTION) / (running_count + FRACTION)
 
-            dist_sqr = np.sum(
-                np.abs(
-                        (running_sum[None, :] + gk) / (running_count + 1)
-                        - landmark_expectations[None, :]
-                ) ** 1.3,
-                axis=1
-            )
-            best_idx = np.argmin(dist_sqr)
-            best_pt = candidates[best_idx]
-            best_k = gk[best_idx]
+            # distance-based measure
+            dist_arr = np.abs(new_means - landmark_expectations[None, :])**EXPONENT
+            dist_score = np.sum(dist_arr, axis=1)  # shape (candidate_size,)
 
-            # Update running sums
-            running_sum += best_k
-            running_count += 1
+            # repulsion-based measure
+            repulsions = compute_repulsion(candidates)  # shape (candidate_size,)
 
-            # The new running mean
-            running_landmark_expectation = running_sum / running_count
-            return best_pt, running_landmark_expectation
+            import math
+            repulsion_discount = math.exp(-0.001*running_count)
+
+            # total score
+            total_score = dist_score + REPULSION_WEIGHT * repulsions * repulsion_discount
+            best_idx = np.argmin(total_score)
+
+            # Remove the candidate from the list
+            if candidates.shape[0] > 5:
+                candidates = np.delete(candidates, best_idx, axis=0)
+
+            return candidates[best_idx], gk[best_idx]
 
         candidates = None
 
         for i in range(n_iters):
-            # Possibly refresh candidate set
             if (i % refresh_every) == 0 or (candidates is None):
-                # Generate candidate_size random 2D points
-                # For demonstration, let's do standard normal N(0,I):
+                # Re-generate candidate points
                 candidates = rng.normal(loc=0.0, scale=2.0, size=(candidate_size, 2))
 
-            # Pick best candidate
-            best_x, running_exp = pick_best_sample(candidates)
+            best_x, best_gk = pick_best_candidate(candidates)
 
-            # We could remove that candidate from the list if we wanted to avoid re-picking the same point,
-            # but herding doesn't necessarily need that. We'll keep it simple.
+            # Remove the candidate from the list
 
-            yield (best_x, running_exp)
 
+            # ----------- Add small random noise to best_x -----------
+            # Example: reduce noise a bit over iterations, or keep it constant
+            noise_reduction = math.exp(-0.001*running_count)
+            noise = rng.normal(scale=noise_reduction * NOISE_SCALE, size=2)
+            best_x_noisy = best_x + noise
+
+            # Re-compute kernel for the noisy version
+            k_noisy = gaussian_kernel_multi(best_x_noisy, landmarks, sigma_k)
+
+            # Update sums
+            running_sum += k_noisy
+            running_count += 1
+            sample_history.append(best_x_noisy)
+
+            running_landmark_expectation = running_sum / running_count
+
+            yield (best_x_noisy, running_landmark_expectation)
+
+    # ------------------ 5) Animate the results ------------------
     gen = herding_generator(n_iters=2000)
-
-    # 5) Animate it
     animator(landmarks, landmark_expectations, sigma_k, gen, true_rho=true_rho)
 
-    # Print a small summary
+    # Print summary
     print(f"Generated {m} 2D landmarks in [-5, 5].")
-    print(f"Random true_cov:\n{true_cov}")
+    print("Random correlation matrix:\n", true_cov)
     print("True Landmark Expectations (first 5 shown):", landmark_expectations[:5])
 
 
