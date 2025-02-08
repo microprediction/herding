@@ -1,9 +1,7 @@
-# herding
-Kernel herding is a kind of quasi-monte carlo where samples are chosen successively to approximate known kernel moment constraints. 
+# herding  ![tests_312](https://github.com/microprediction/herding/workflows/tests_312/badge.svg)
+Kernel herding is a kind of quasi-monte carlo where samples are chosen successively to approximate known kernel moment constraints. In the [video](https://github.com/microprediction/herding/tree/main/docs/assets/video) also linked below, the green dots are landmark locations `y` and the expected values of a gaussian kernel `E_x[ker(x,y)]` are assumed known for each of them. There's a short comment [here](https://www.linkedin.com/posts/petercotton_statistics-machinelearning-finance-activity-7293334524770271234--uGI?utm_source=share&utm_medium=member_desktop). 
 
-In the [video](https://github.com/microprediction/herding/tree/main/docs/assets/video) also linked below, the green dots are landmark locations `y` and the expected value of a gaussian kernel `E[ker(x,y)]` is assumed known for the desired distribution for `x`, which happens to be Gaussian.   
-
-See [examples](https://github.com/microprediction/herding/tree/main/examples)
+This repo is rather minimalist, providing basic primatives and patterns for using them in herding experiments. See [examples](https://github.com/microprediction/herding/tree/main/examples).  See also the [literature](https://github.com/microprediction/herding/blob/main/LITERATURE.md) on herding. 
 
 
 [![Herding Demo](docs/assets/images/herding_video_thumb.png)](docs/assets/video/herding_video_low_res.mp4)
